@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 
 class HourEntry(BaseModel):
     hour: int = Field(..., ge=0, le=23, description="Hour of the day (0-23)")
@@ -16,19 +16,9 @@ class BatteryConfig(BaseModel):
 
 class OptimizationRequest(BaseModel):
     scenario_id: str
-    operator_notes: List[str] = Field(..., max_length=3, description="List of operator notes, max 3 items.")
+    operator_notes: List[str] = Field(..., min_length=1, max_length=3, description="List of operator notes, max 3 items.")
     hours: List[HourEntry] = Field(..., min_length=24, max_length=24, description="Exactly 24 hour entries.")
     battery: BatteryConfig
-
-class StructuredAdjustment(BaseModel):
-    hours: List[int] = Field(
-        ..., 
-        description="Sorted list of unique integers representing hours (0-23)."
-    )
-    value: Optional[float] = Field(
-        None, 
-        description="Value associated with the directive (e.g. reduction factor, reserve limit)."
-    )
 
 DirectiveType = Literal[
     "solar_reduction", 
@@ -43,7 +33,7 @@ class DirectiveInterpretation(BaseModel):
     note_index: int
     applies: bool
     directive_type: DirectiveType
-    structured_adjustment: Optional[StructuredAdjustment] = None
+    structured_adjustment: Optional[Dict[str, Any]] = None
     explanation: str
 
     @model_validator(mode='after')

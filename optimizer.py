@@ -29,14 +29,16 @@ def optimize_energy(
     for d in directives:
         if d.directive_type == "no_op" or not d.applies or not d.structured_adjustment:
             continue
-        
-        hours = d.structured_adjustment.hours
-        val = d.structured_adjustment.value
-        
+
+        sa = d.structured_adjustment
+        hours = sa.get("hours", [])
+
         if d.directive_type == "solar_reduction":
+            val = sa.get("factor")
             for h in hours:
                 solar_factors[h] = val
         elif d.directive_type == "minimum_battery_reserve":
+            val = sa.get("minimum_energy_kwh")
             for h in hours:
                 active_min_reserve[h] = max(active_min_reserve[h], val)
         elif d.directive_type == "no_charge_window":
@@ -46,6 +48,7 @@ def optimize_energy(
             for h in hours:
                 discharge_allowed[h] = False
         elif d.directive_type == "max_grid_window":
+            val = sa.get("max_grid_kwh")
             for h in hours:
                 max_grid_limits[h] = min(max_grid_limits[h], val)
 

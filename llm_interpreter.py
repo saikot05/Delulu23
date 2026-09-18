@@ -36,18 +36,18 @@ Here are the notes:
         
     prompt += """
 For each note, output a structured interpretation. You must determine if it contains an operational directive.
-Supported directive_types:
-1. "solar_reduction": e.g., "panel washing from 12 to 2 PM reduces solar by 75%" -> hours [12, 13] (start inclusive, end exclusive), value=0.25 (meaning 25% solar efficiency remains, factor is 0.25).
-2. "minimum_battery_reserve": e.g., "keep at least 50 kWh reserve from 6 PM to 10 PM" -> hours [18, 19, 20, 21], value=50.
-3. "no_charge_window": e.g., "do not charge battery between 8 AM and 10 AM" -> hours [8, 9], value=None.
-4. "no_discharge_window": e.g., "preserve battery, no discharge from 17:00 to 19:00" -> hours [17, 18], value=None.
-5. "max_grid_window": e.g., "limit grid usage to 100 kWh from 2 PM to 4 PM" -> hours [14, 15], value=100.
+Supported directive_types and their structured_adjustment shape:
+1. "solar_reduction": e.g., "panel washing from 12 to 2 PM reduces solar by 75%" -> {"hours": [12, 13], "factor": 0.25} (start inclusive, end exclusive; factor is the fraction of solar efficiency that remains).
+2. "minimum_battery_reserve": e.g., "keep at least 50 kWh reserve from 6 PM to 10 PM" -> {"hours": [18, 19, 20, 21], "minimum_energy_kwh": 50}.
+3. "no_charge_window": e.g., "do not charge battery between 8 AM and 10 AM" -> {"hours": [8, 9]}.
+4. "no_discharge_window": e.g., "preserve battery, no discharge from 17:00 to 19:00" -> {"hours": [17, 18]}.
+5. "max_grid_window": e.g., "limit grid usage to 100 kWh from 2 PM to 4 PM" -> {"hours": [14, 15], "max_grid_kwh": 100}.
 6. "no_op": Unrelated notes, e.g., "lunch was great today" -> applies=False, directive_type="no_op", structured_adjustment=None.
 
-IMPORTANT: 
+IMPORTANT:
 - `hours` inside `structured_adjustment` must be a sorted list of unique integers between 0 and 23.
 - If the note is irrelevant or you can't parse it, use "no_op" with applies=False and structured_adjustment=None.
-- For all directive_types other than "no_op", applies must be True and structured_adjustment must be provided.
+- For all directive_types other than "no_op", applies must be True and structured_adjustment must be provided with the exact shape above.
 - Ensure note_index matches the index of the note.
 """
 
