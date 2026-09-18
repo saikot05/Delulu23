@@ -28,33 +28,52 @@ def validate_interpretations(
                 is_valid = False
             else:
                 sa = interp.structured_adjustment
-                hours = sa.get("hours")
+                try:
+                    hours = sa.get("hours")
+                    # 2. Validate hour ranges (0-23, strictly ascending, unique)
+                    if not isinstance(hours, list):
+                        is_valid = False
+                    else:
+                        hours = [int(h) for h in hours]
+                        sa["hours"] = hours
+                        if not all(0 <= h <= 23 for h in hours):
+                            is_valid = False
+                        if sorted(list(set(hours))) != hours:
+                            is_valid = False
 
-                # 2. Validate hour ranges (0-23, strictly ascending, unique)
-                if not isinstance(hours, list):
+                    # 3. Validate numeric ranges based on directive_type
+                    if interp.directive_type == "solar_reduction":
+                        value = sa.get("factor")
+                        if value is None:
+                            is_valid = False
+                        else:
+                            value = float(value)
+                            sa["factor"] = value
+                            if not (0.0 <= value <= 1.0):
+                                is_valid = False
+                    elif interp.directive_type == "minimum_battery_reserve":
+                        value = sa.get("minimum_energy_kwh")
+                        if value is None:
+                            is_valid = False
+                        else:
+                            value = float(value)
+                            sa["minimum_energy_kwh"] = value
+                            if not (0.0 <= value <= battery_capacity):
+                                is_valid = False
+                    elif interp.directive_type == "max_grid_window":
+                        value = sa.get("max_grid_kwh")
+                        if value is None:
+                            is_valid = False
+                        else:
+                            value = float(value)
+                            sa["max_grid_kwh"] = value
+                            if value < 0:
+                                is_valid = False
+                    elif interp.directive_type in ("no_charge_window", "no_discharge_window"):
+                        # These shouldn't necessarily need a value, or value can be anything (we ignore it)
+                        pass
+                except (TypeError, ValueError):
                     is_valid = False
-                else:
-                    if not all(isinstance(h, int) and 0 <= h <= 23 for h in hours):
-                        is_valid = False
-                    if sorted(list(set(hours))) != hours:
-                        is_valid = False
-
-                # 3. Validate numeric ranges based on directive_type
-                if interp.directive_type == "solar_reduction":
-                    value = sa.get("factor")
-                    if value is None or not (0.0 <= value <= 1.0):
-                        is_valid = False
-                elif interp.directive_type == "minimum_battery_reserve":
-                    value = sa.get("minimum_energy_kwh")
-                    if value is None or not (0.0 <= value <= battery_capacity):
-                        is_valid = False
-                elif interp.directive_type == "max_grid_window":
-                    value = sa.get("max_grid_kwh")
-                    if value is None or value < 0:
-                        is_valid = False
-                elif interp.directive_type in ("no_charge_window", "no_discharge_window"):
-                    # These shouldn't necessarily need a value, or value can be anything (we ignore it)
-                    pass
 
         # Apply fallback if invalid
         if not is_valid:
