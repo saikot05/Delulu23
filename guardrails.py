@@ -1,0 +1,69 @@
+from typing import List
+from schemas import DirectiveInterpretation, DirectiveType
+
+def validate_interpretations(
+    interpretations: List[DirectiveInterpretation],
+    num_notes: int,
+    battery_capacity: float
+) -> List[DirectiveInterpretation]:
+    """
+    Deterministically validate LLM output.
+    - Check note_index bounds (0..N-1)
+    - Enforce valid directive types
+    - Validate hour ranges (0-23, strictly ascending, unique)
+    - Validate numeric ranges (solar factor 0.0-1.0, reserve <= battery capacity, max_grid >= 0)
+    - If validation fails, safely fall back to `no_op`.
+    """
+    validated = []
+    for interp in interpretations:
+        is_valid = True
+        
+        # 1. Check note_index bounds
+        if not (0 <= interp.note_index < num_notes):
+            is_valid = False
+
+        if interp.directive_type != "no_op" and is_valid:
+            # Check structured adjustment presence
+            if interp.structured_adjustment is None:
+                is_valid = False
+            else:
+                hours = interp.structured_adjustment.hours
+                value = interp.structured_adjustment.value
+
+                # 2. Validate hour ranges (0-23, strictly ascending, unique)
+                if not all(0 <= h <= 23 for h in hours):
+                    is_valid = False
+                if sorted(list(set(hours))) != hours:
+                    is_valid = False
+
+                # 3. Validate numeric ranges based on directive_type
+                if interp.directive_type == "solar_reduction":
+                    if value is None or not (0.0 <= value <= 1.0):
+                        is_valid = False
+                elif interp.directive_type == "minimum_battery_reserve":
+                    if value is None or not (0.0 <= value <= battery_capacity):
+                        is_valid = False
+                elif interp.directive_type == "max_grid_window":
+                    if value is None or value < 0:
+                        is_valid = False
+                elif interp.directive_type in ("no_charge_window", "no_discharge_window"):
+                    # These shouldn't necessarily need a value, or value can be anything (we ignore it)
+                    pass
+
+        # Apply fallback if invalid
+        if not is_valid:
+            validated.append(
+                DirectiveInterpretation(
+                    note_index=interp.note_index if (0 <= interp.note_index < num_notes) else 0,
+                    applies=False,
+                    directive_type="no_op",
+                    structured_adjustment=None,
+                    explanation="Guardrails validation failed, falling back to no_op."
+                )
+            )
+        else:
+            validated.append(interp)
+            
+    # Ensure exactly one interpretation per note if needed, 
+    # but currently we just return the cleaned up list.
+    return validated
