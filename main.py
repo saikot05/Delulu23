@@ -11,6 +11,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GridWise API Shell")
 
+# Custom exception for LLM provider failures
+class ProviderUnavailableError(Exception):
+    def __init__(self, message: str = "LLM Provider is currently unavailable"):
+        self.message = message
+        super().__init__(self.message)
+
 @app.middleware("http")
 async def latency_logging_middleware(request: Request, call_next):
     start_time = time.perf_counter()
@@ -36,6 +42,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": "Validation error", "errors": exc.errors()},
     )
 
+@app.exception_handler(ProviderUnavailableError)
+async def provider_unavailable_exception_handler(request: Request, exc: ProviderUnavailableError):
+    # Maps LLM failures cleanly
+    logger.error(f"Provider error: {exc.message}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": exc.message}
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # Strict Secure Error Handling: Safe 500 without leaking stack traces or secrets
@@ -46,7 +61,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 async def run_core_optimization(request: OptimizationRequest) -> OptimizationResponse:
-    # TEAMMEMBER_1_WILL_REPLACE_THE_LOGIC_INSIDE_THIS_FUNCTION
+    # TEAMMEMBER_1_HANDOFF: Replace mock execution here with solve_energy_plan/interpret_notes import
     
     # Create mock interpretations
     interpretations = []
