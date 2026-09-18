@@ -89,6 +89,12 @@ def optimize_energy_endpoint(request: OptimizationRequest):
             peak_grid_kwh=peak_grid_kwh,
             plan_summary=plan_summary
         )
+    except ValueError as ve:
+        logger.warning(f"Infeasible constraints: {ve}")
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Infeasible energy scenario: conflicting constraints."}
+        )
     except Exception as e:
         logger.error(f"Optimization failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to compute an optimization plan for this scenario.")
