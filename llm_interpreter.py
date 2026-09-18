@@ -26,15 +26,15 @@ class LLMResponse(BaseModel):
 def _to_app_directive(item: LLMDirectiveInterpretation) -> DirectiveInterpretation:
     sa = item.structured_adjustment
     structured_adjustment = None
-    if item.directive_type != "no_op" and sa is not None:
-        if item.directive_type == "solar_reduction":
-            structured_adjustment = {"hours": sa.hours, "factor": sa.factor}
-        elif item.directive_type == "minimum_battery_reserve":
-            structured_adjustment = {"hours": sa.hours, "minimum_energy_kwh": sa.minimum_energy_kwh}
-        elif item.directive_type == "max_grid_window":
-            structured_adjustment = {"hours": sa.hours, "max_grid_kwh": sa.max_grid_kwh}
-        elif item.directive_type in ("no_charge_window", "no_discharge_window"):
-            structured_adjustment = {"hours": sa.hours}
+    if item.directive_type != 'no_op' and sa is not None:
+        if item.directive_type == 'solar_reduction':
+            structured_adjustment = {'hours': sa.hours, 'factor': sa.factor}
+        elif item.directive_type == 'minimum_battery_reserve':
+            structured_adjustment = {'hours': sa.hours, 'minimum_energy_kwh': sa.minimum_energy_kwh}
+        elif item.directive_type == 'max_grid_window':
+            structured_adjustment = {'hours': sa.hours, 'max_grid_kwh': sa.max_grid_kwh}
+        elif item.directive_type in ('no_charge_window', 'no_discharge_window'):
+            structured_adjustment = {'hours': sa.hours}
     return DirectiveInterpretation(
         note_index=item.note_index,
         applies=item.applies,
@@ -44,35 +44,29 @@ def _to_app_directive(item: LLMDirectiveInterpretation) -> DirectiveInterpretati
     )
 
 def get_gemini_client():
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is not set")
+        raise ValueError('GEMINI_API_KEY environment variable is not set')
     return genai.Client(api_key=api_key)
 
 def get_groq_client():
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
-        raise ValueError("GROQ_API_KEY environment variable is not set")
+        raise ValueError('GROQ_API_KEY environment variable is not set')
     return Groq(api_key=api_key)
 
 def interpret_operator_notes(operator_notes: List[str], battery_capacity: float) -> List[DirectiveInterpretation]:
-    """
-    Connects to Groq (Llama-3) to interpret human operator notes into actionable directives.
-    Falls back to Gemini 2.5 Flash on failure. Uses Structured Outputs.
-    """
     if not operator_notes:
         return []
 
+    notes_text = '\n'.join([f'Note {i}: {note}' for i, note in enumerate(operator_notes)])
     prompt = f"""You are an AI assistant for a smart campus energy management system.
 Your job is to interpret notes left by a human operator and translate them into strict operational directives.
 The campus has a battery with a capacity of {battery_capacity} kWh.
 
 Here are the notes:
-"""
-    for i, note in enumerate(operator_notes):
-        prompt += f"Note {i}: {note}\n"
+{notes_text}
 
-    prompt += """
 For each note, output a structured interpretation. You must determine if it contains an operational directive.
 Supported directive_types, and which structured_adjustment fields to fill for each (leave all other fields null):
 1. "solar_reduction": e.g., "panel washing from 12 to 2 PM reduces solar by 75%" -> hours=[12, 13] (start inclusive, end exclusive), factor=0.25 (the fraction of solar efficiency that remains). Fill only `hours` and `factor`.
@@ -89,62 +83,46 @@ IMPORTANT:
 - If the note is irrelevant or you can't parse it, use "no_op" with applies=False and structured_adjustment=None.
 - For all directive_types other than "no_op", applies must be True and structured_adjustment must be provided with the fields described above.
 - Ensure note_index matches the index of the note.
+Return JSON matching the schema with an "interpretations" array.
 """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=LLMResponse,
-                temperature=0.0
-            ),
-        )
-
-        # Parse the JSON response manually in case response.parsed isn't auto-populated
-        response_text = response.text
-        parsed_data = LLMResponse.model_validate_json(response_text)
-        return [_to_app_directive(item) for item in parsed_data.interpretations]
         try:
-            # 1. Primary Attempt: Groq
             groq_client = get_groq_client()
             response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
+                model='llama-3.3-70b-versatile',
+                messages=[{'role': 'user', 'content': prompt}],
                 temperature=0.0,
-                response_format={"type": "json_object"}
+                response_format={'type': 'json_object'}
             )
             response_text = response.choices[0].message.content
             parsed_data = LLMResponse.model_validate_json(response_text)
-            return parsed_data.interpretations
+            return [_to_app_directive(item) for item in parsed_data.interpretations]
         except Exception as groq_e:
-            print(f"Groq API failed: {groq_e}. Falling back to Gemini...")
-            # 2. Fallback Attempt: Gemini
+            print(f'Groq API failed: {groq_e}. Falling back to Gemini...')
             gemini_client = get_gemini_client()
             response = gemini_client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
+                    response_mime_type='application/json',
                     response_schema=LLMResponse,
                     temperature=0.0
                 ),
             )
-            # Parse the JSON response manually in case response.parsed isn't auto-populated
             response_text = response.text
             parsed_data = LLMResponse.model_validate_json(response_text)
-            return parsed_data.interpretations
+            return [_to_app_directive(item) for item in parsed_data.interpretations]
+
     except Exception as e:
-        print(f"Error during LLM interpretation: {e}")
-        # In case of any LLM failure (e.g. timeout, malformed JSON), fallback to no_op for all notes
+        print(f'Error during LLM interpretation: {e}')
         return [
             DirectiveInterpretation(
                 note_index=i,
                 applies=False,
-                directive_type="no_op",
+                directive_type='no_op',
                 structured_adjustment=None,
-                explanation=f"Fallback due to LLM error: {str(e)}"
+                explanation=f'Fallback due to LLM error: {str(e)}'
             )
             for i in range(len(operator_notes))
         ]
