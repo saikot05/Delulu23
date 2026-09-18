@@ -1,4 +1,5 @@
 import logging
+import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -10,12 +11,22 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GridWise API Shell")
 
+@app.middleware("http")
+async def latency_logging_middleware(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    # Secure logging: only logs method, path, and time. No payload or keys.
+    logger.info(f"{request.method} {request.url.path} completed in {process_time:.4f}s")
+    return response
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Strict Secure Error Handling: Clean 400
     return JSONResponse(
         status_code=400,
         content={"detail": "Validation error", "errors": exc.errors()},
@@ -23,15 +34,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Internal server error: {exc}", exc_info=True)
+    # Strict Secure Error Handling: Safe 500 without leaking stack traces or secrets
+    logger.error("An internal error occurred during request processing.", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": "An internal server error occurred."}
+        content={"detail": "Internal Server Error"}
     )
 
-@app.post("/optimize-energy", response_model=OptimizationResponse)
-def optimize_energy_endpoint(request: OptimizationRequest):
-    # Dummy Stub / Mock Logic
+async def run_core_optimization(request: OptimizationRequest) -> OptimizationResponse:
+    # TEAMMEMBER_1_WILL_REPLACE_THE_LOGIC_INSIDE_THIS_FUNCTION
     
     # Create mock interpretations
     interpretations = []
@@ -71,3 +82,7 @@ def optimize_energy_endpoint(request: OptimizationRequest):
     )
     
     return response
+
+@app.post("/optimize-energy", response_model=OptimizationResponse)
+async def optimize_energy_endpoint(request: OptimizationRequest):
+    return await run_core_optimization(request)
