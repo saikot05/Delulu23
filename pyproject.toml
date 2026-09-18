@@ -1,0 +1,10 @@
+[project]
+name = "delulu23"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "google-genai>=2.24.0",
+    "groq>=1.7.0",
+]
