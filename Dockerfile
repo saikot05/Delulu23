@@ -6,6 +6,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 WORKDIR /app
 
 ENV GEMINI_API_KEY=""
+ENV GROQ_API_KEY=""
 
 # Multi-layer caching: copy requirements first
 COPY requirements.txt .
