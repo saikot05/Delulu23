@@ -6,18 +6,22 @@ from fastapi.exceptions import RequestValidationError
 
 from models import OptimizationRequest, OptimizationResponse, DirectiveInterpretation, HourlyPlan, StructuredAdjustment
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GridWise API Shell")
 
 @app.middleware("http")
 async def latency_logging_middleware(request: Request, call_next):
-    start_time = time.time()
+    start_time = time.perf_counter()
     response = await call_next(request)
-    process_time = time.time() - start_time
-    # Secure logging: only logs method, path, and time. No payload or keys.
-    logger.info(f"{request.method} {request.url.path} completed in {process_time:.4f}s")
+    process_time_ms = (time.perf_counter() - start_time) * 1000
+    
+    # Structured log, explicitly avoiding payload and header logging for security
+    logger.info(
+        f"method={request.method} path={request.url.path} "
+        f"status_code={response.status_code} latency_ms={process_time_ms:.2f}"
+    )
     return response
 
 @app.get("/health")
