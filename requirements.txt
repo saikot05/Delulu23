@@ -3,4 +3,5 @@ uvicorn
 pydantic
 pulp
 google-genai
+groq
 python-dotenv

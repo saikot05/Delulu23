@@ -4,6 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ValidationError
 from google import genai
 from google.genai import types
+from groq import Groq
 from schemas import DirectiveInterpretation, DirectiveType
 
 class LLMStructuredAdjustment(BaseModel):
@@ -48,15 +49,19 @@ def get_gemini_client():
         raise ValueError("GEMINI_API_KEY environment variable is not set")
     return genai.Client(api_key=api_key)
 
+def get_groq_client():
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY environment variable is not set")
+    return Groq(api_key=api_key)
+
 def interpret_operator_notes(operator_notes: List[str], battery_capacity: float) -> List[DirectiveInterpretation]:
     """
-    Connects to the LLM to interpret a list of human operator notes into actionable directives.
-    Uses Structured Outputs for strict adherence to schemas.
+    Connects to Groq (Llama-3) to interpret human operator notes into actionable directives.
+    Falls back to Gemini 2.5 Flash on failure. Uses Structured Outputs.
     """
     if not operator_notes:
         return []
-
-    client = get_gemini_client()
 
     prompt = f"""You are an AI assistant for a smart campus energy management system.
 Your job is to interpret notes left by a human operator and translate them into strict operational directives.
@@ -101,6 +106,35 @@ IMPORTANT:
         response_text = response.text
         parsed_data = LLMResponse.model_validate_json(response_text)
         return [_to_app_directive(item) for item in parsed_data.interpretations]
+        try:
+            # 1. Primary Attempt: Groq
+            groq_client = get_groq_client()
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                response_format={"type": "json_object"}
+            )
+            response_text = response.choices[0].message.content
+            parsed_data = LLMResponse.model_validate_json(response_text)
+            return parsed_data.interpretations
+        except Exception as groq_e:
+            print(f"Groq API failed: {groq_e}. Falling back to Gemini...")
+            # 2. Fallback Attempt: Gemini
+            gemini_client = get_gemini_client()
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=LLMResponse,
+                    temperature=0.0
+                ),
+            )
+            # Parse the JSON response manually in case response.parsed isn't auto-populated
+            response_text = response.text
+            parsed_data = LLMResponse.model_validate_json(response_text)
+            return parsed_data.interpretations
     except Exception as e:
         print(f"Error during LLM interpretation: {e}")
         # In case of any LLM failure (e.g. timeout, malformed JSON), fallback to no_op for all notes
