@@ -1,14 +1,34 @@
 import logging
+import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from models import OptimizationRequest, OptimizationResponse, DirectiveInterpretation, HourlyPlan, StructuredAdjustment
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GridWise API Shell")
+
+# Custom exception for LLM provider failures
+class ProviderUnavailableError(Exception):
+    def __init__(self, message: str = "LLM Provider is currently unavailable"):
+        self.message = message
+        super().__init__(self.message)
+
+@app.middleware("http")
+async def latency_logging_middleware(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    process_time_ms = (time.perf_counter() - start_time) * 1000
+    
+    # Structured log, explicitly avoiding payload and header logging for security
+    logger.info(
+        f"method={request.method} path={request.url.path} "
+        f"status_code={response.status_code} latency_ms={process_time_ms:.2f}"
+    )
+    return response
 
 @app.get("/health")
 def health_check():
@@ -16,22 +36,32 @@ def health_check():
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Strict Secure Error Handling: Clean 400
     return JSONResponse(
         status_code=400,
         content={"detail": "Validation error", "errors": exc.errors()},
     )
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Internal server error: {exc}", exc_info=True)
+@app.exception_handler(ProviderUnavailableError)
+async def provider_unavailable_exception_handler(request: Request, exc: ProviderUnavailableError):
+    # Maps LLM failures cleanly
+    logger.error(f"Provider error: {exc.message}")
     return JSONResponse(
-        status_code=500,
-        content={"detail": "An internal server error occurred."}
+        status_code=503,
+        content={"detail": exc.message}
     )
 
-@app.post("/optimize-energy", response_model=OptimizationResponse)
-def optimize_energy_endpoint(request: OptimizationRequest):
-    # Dummy Stub / Mock Logic
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Strict Secure Error Handling: Safe 500 without leaking stack traces or secrets
+    logger.error("An internal error occurred during request processing.", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"}
+    )
+
+async def run_core_optimization(request: OptimizationRequest) -> OptimizationResponse:
+    # TEAMMEMBER_1_HANDOFF: Replace mock execution here with solve_energy_plan/interpret_notes import
     
     # Create mock interpretations
     interpretations = []
@@ -71,3 +101,7 @@ def optimize_energy_endpoint(request: OptimizationRequest):
     )
     
     return response
+
+@app.post("/optimize-energy", response_model=OptimizationResponse)
+async def optimize_energy_endpoint(request: OptimizationRequest):
+    return await run_core_optimization(request)
